@@ -1,0 +1,357 @@
+<!-- Save as index.html and open in browser -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SmartStay — Smart Home Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --primary:#1E88E5; --primary-dark:#1565C0; --accent:#FFB300;
+    --bg:#F5F7FA; --surface:#FFFFFF; --text:#0F1724; --muted:#6B7280;
+    --success:#34D399; --danger:#EF4444; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%; margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial; background:var(--bg); color:var(--text);}
+  .app{max-width:980px; margin:20px auto; padding:16px;}
+  header{display:flex; align-items:center; gap:12px;}
+  .logo{font-weight:700; font-size:20px;}
+  .scenes{display:flex; gap:8px; margin:12px 0; overflow:auto;}
+  .scene{padding:8px 12px; border-radius:999px; background:#fff; border:1px solid transparent; display:inline-flex; gap:8px; align-items:center; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.04);}
+  .scene.active{background:var(--primary); color:#fff; border-color:var(--primary-dark);}
+  .rooms{display:flex; gap:8px; overflow:auto; margin:8px 0 16px;}
+  .room-pill{padding:8px 12px; background:var(--surface); border-radius:999px; cursor:pointer; border:1px solid transparent;}
+  .room-pill.active{border-color:var(--primary); box-shadow:0 1px 2px rgba(21,101,192,0.08);}
+  .panel{background:var(--surface); padding:16px; border-radius:12px; box-shadow:0 6px 18px rgba(15,23,36,0.04);}
+  .devices{display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; margin-top:12px;}
+  .device{background:linear-gradient(180deg,#fff,#fbfdff); padding:12px; border-radius:10px; border:1px solid #EEF2F7; display:flex; flex-direction:column; gap:8px;}
+  .device .row{display:flex; align-items:center; justify-content:space-between;}
+  .toggle{display:inline-flex; align-items:center; gap:8px;}
+  .btn{padding:8px 12px; border-radius:8px; border:0; cursor:pointer; font-weight:600;}
+  .btn.primary{background:var(--primary); color:#fff;}
+  .btn.ghost{background:transparent; border:1px solid #E6EEF9; color:var(--text);}
+  .footer{margin-top:18px; font-size:14px; color:var(--muted);}
+  .small{font-size:13px; color:var(--muted);}
+  .toast{position:fixed; right:20px; bottom:20px; background:#111; color:#fff; padding:10px 14px; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,0.2); display:none;}
+  .thermo{display:flex; gap:8px; align-items:center;}
+  input[type="range"]{width:120px;}
+  .chip{padding:6px 10px; border-radius:999px; background:#F3F7FB; font-size:13px;}
+  .modal{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(12,18,30,0.45); padding:20px;}
+  .modal .card{background:var(--surface); padding:18px; border-radius:12px; width:100%; max-width:520px;}
+  .list{max-height:200px; overflow:auto; margin-top:8px;}
+  .schedule-item{display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #F1F5F9;}
+  /* focus */
+  .btn:focus, .room-pill:focus, .scene:focus, .device:focus{outline:3px solid rgba(21,101,192,0.14); outline-offset:2px;}
+  /* responsive */
+  @media (max-width:520px){ .devices{grid-template-columns:repeat(2,1fr);} }
+</style>
+</head>
+<body>
+<div class="app" role="application" aria-label="SmartStay smart home control">
+  <header>
+    <button class="btn ghost" id="menuBtn" aria-label="Open menu">☰</button>
+    <div class="logo">SmartStay</div>
+    <div style="flex:1"></div>
+    <button class="btn ghost" id="settingsBtn" aria-label="Open settings">⚙️</button>
+  </header>
+
+  <section aria-labelledby="status">
+    <h2 id="status">Home • <span id="homeStatus" class="small">All systems normal</span></h2>
+    <div class="scenes" role="tablist" aria-label="Scenes">
+      <button class="scene" role="tab" data-scene="home">🏠 Home</button>
+      <button class="scene" role="tab" data-scene="away">🚪 Away</button>
+      <button class="scene" role="tab" data-scene="night">🌙 Night</button>
+      <button class="scene" id="customSceneBtn">+ Custom</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="roomsLabel">
+    <h3 id="roomsLabel">Rooms</h3>
+    <div class="rooms" role="tablist" aria-label="Rooms" id="roomsList"></div>
+
+    <div id="roomPanel">
+      <h3 id="roomName">—</h3>
+      <div class="small" id="roomSubtitle">Select a room</div>
+
+      <div class="devices" id="devicesGrid" role="list"></div>
+
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn ghost" id="allOffBtn">All Off</button>
+        <button class="btn primary" id="scheduleBtn">Schedule</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">Prototype • LocalStorage persistence • Accessibility focused</div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="modal" id="modal">
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle">Schedule Manager</h3>
+    <div>
+      <label class="small">Device
+        <select id="schedDevice" aria-label="Device to schedule"></select>
+      </label>
+      <div style="margin-top:8px;">
+        <label class="small">Time <input type="time" id="schedTime" value="07:00"></label>
+        <label class="small" style="margin-left:12px">Repeat
+          <select id="schedRepeat">
+            <option value="daily">Daily</option>
+            <option value="weekdays">Weekdays</option>
+            <option value="once">Once</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn primary" id="saveSched">Save</button>
+        <button class="btn ghost" id="closeSched">Close</button>
+      </div>
+      <div class="list" id="schedList" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Prototype app logic */
+const defaultState = {
+  rooms: {
+    "Living Room": {
+      devices: {
+        "Ceiling Light": {type:'light',on:false},
+        "Thermostat": {type:'thermostat',temp:21},
+        "Coffee Maker": {type:'appliance',on:false}
+      }
+    },
+    "Kitchen": {
+      devices: {
+        "Kitchen Light": {type:'light',on:false},
+        "Toaster": {type:'appliance',on:false}
+      }
+    },
+    "Bedroom": {
+      devices: {
+        "Bedside Lamp": {type:'light',on:false},
+        "Fan": {type:'appliance',on:false}
+      }
+    }
+  },
+  activeRoom: "Living Room",
+  activeScene: "home",
+  schedules: [] // {id, devicePath, time, repeat}
+};
+
+function loadState(){ try{
+  const raw=localStorage.getItem('smartstay_v1'); return raw?JSON.parse(raw):structuredClone(defaultState);
+}catch(e){return structuredClone(defaultState);} }
+function saveState(){ localStorage.setItem('smartstay_v1', JSON.stringify(state)); }
+let state = loadState();
+
+/* UI helpers */
+const roomsList = document.getElementById('roomsList');
+const devicesGrid = document.getElementById('devicesGrid');
+const roomName = document.getElementById('roomName');
+const roomSubtitle = document.getElementById('roomSubtitle');
+const toast = document.getElementById('toast');
+const modal = document.getElementById('modal');
+const schedDevice = document.getElementById('schedDevice');
+const schedTime = document.getElementById('schedTime');
+const schedRepeat = document.getElementById('schedRepeat');
+const schedList = document.getElementById('schedList');
+
+function showToast(msg, ms=3500){ toast.textContent = msg; toast.style.display='block'; setTimeout(()=>toast.style.display='none', ms); }
+
+/* Render rooms */
+function renderRooms(){
+  roomsList.innerHTML='';
+  Object.keys(state.rooms).forEach((r, idx)=>{
+    const btn=document.createElement('button');
+    btn.className='room-pill'+(r===state.activeRoom?' active':'');
+    btn.textContent=r;
+    btn.setAttribute('role','tab');
+    btn.onclick = ()=>{ state.activeRoom=r; saveState(); renderAll();}
+    roomsList.appendChild(btn);
+  })
+}
+
+/* Render devices */
+function renderDevices(){
+  devicesGrid.innerHTML='';
+  roomName.textContent = state.activeRoom;
+  const room = state.rooms[state.activeRoom];
+  let deviceNames = Object.keys(room.devices);
+  roomSubtitle.textContent = deviceNames.length + ' device(s)';
+  deviceNames.forEach(name=>{
+    const dev=room.devices[name];
+    const tile = document.createElement('div');
+    tile.className='device';
+    tile.setAttribute('role','listitem');
+    const titleRow = document.createElement('div'); titleRow.className='row';
+    const left = document.createElement('div'); left.innerHTML = `<div style="font-weight:600">${name}</div><div class="small">${dev.type}</div>`;
+    const right = document.createElement('div'); right.innerHTML = `<div class="chip">${dev.type==='thermostat' ? dev.temp + '°C' : (dev.on? 'On':'Off')}</div>`
+    titleRow.appendChild(left); titleRow.appendChild(right);
+    tile.appendChild(titleRow);
+
+    if(dev.type==='light' || dev.type==='appliance'){
+      const row = document.createElement('div'); row.className='row';
+      const toggleWrap = document.createElement('div'); toggleWrap.className='toggle';
+      const lbl = document.createElement('span'); lbl.textContent = dev.on? 'On':'Off';
+      const toggle = document.createElement('button'); toggle.className='btn'; toggle.textContent = dev.on? 'Turn Off':'Turn On';
+      toggle.onclick = ()=>{
+        dev.on = !dev.on; saveState(); renderAll();
+        showToast(`${name} ${dev.on? 'turned on':'turned off'}`);
+      };
+      toggleWrap.appendChild(lbl); toggleWrap.appendChild(toggle);
+      row.appendChild(toggleWrap);
+      tile.appendChild(row);
+    }
+
+    if(dev.type==='thermostat'){
+      const thermo = document.createElement('div'); thermo.className='thermo';
+      const input = document.createElement('input'); input.type='range'; input.min=16; input.max=30; input.step=0.5; input.value = dev.temp;
+      const num = document.createElement('div'); num.textContent = dev.temp + '°C';
+      input.oninput = (e)=>{
+        dev.temp = parseFloat(e.target.value); num.textContent = dev.temp + '°C'; saveState();
+      }
+      input.onchange = ()=>{ showToast(`Thermostat set to ${dev.temp}°C`); }
+      input.addEventListener('keydown', (ev)=>{ if(ev.key==='ArrowLeft'){ dev.temp = Math.max(16, dev.temp-0.5); input.value=dev.temp; num.textContent=dev.temp+'°C'; saveState(); } if(ev.key==='ArrowRight'){ dev.temp = Math.min(30, dev.temp+0.5); input.value=dev.temp; num.textContent=dev.temp+'°C'; saveState(); }})
+      thermo.appendChild(input); thermo.appendChild(num);
+      tile.appendChild(thermo);
+    }
+
+    devicesGrid.appendChild(tile);
+  })
+}
+
+/* Scenes */
+const sceneButtons = document.querySelectorAll('.scene');
+sceneButtons.forEach(b=> b.addEventListener('click', (e)=>{
+  const scene = b.dataset.scene;
+  if(!scene){ openCustomSceneModal(); return; }
+  previewScene(scene);
+}));
+
+function previewScene(scene){
+  // Build preview list
+  const preview = [];
+  const actions = [];
+  if(scene==='home'){
+    // home: lights on in living, thermostat 21
+    actions.push({room:'Living Room',device:'Ceiling Light',on:true});
+    actions.push({room:'Living Room',device:'Thermostat',temp:21});
+  } else if(scene==='away'){
+    // away: all non-essential off, thermostat 18
+    Object.keys(state.rooms).forEach(r=>{
+      Object.keys(state.rooms[r].devices).forEach(d=>{
+        const dev=state.rooms[r].devices[d];
+        if(dev.type==='light' || dev.type==='appliance'){ actions.push({room:r,device:d,on:false}); }
+      });
+    });
+    actions.push({room:'Living Room',device:'Thermostat',temp:18});
+  } else if(scene==='night'){
+    // night: lights off, bedroom lamp on
+    Object.keys(state.rooms).forEach(r=>{
+      Object.keys(state.rooms[r].devices).forEach(d=>{
+        const dev=state.rooms[r].devices[d];
+        if(dev.type==='light'){ actions.push({room:r,device:d,on:false}); }
+      });
+    });
+    actions.push({room:'Bedroom',device:'Bedside Lamp',on:true});
+  }
+  // Show preview modal (simple confirm)
+  const confirmed = confirm(`Apply scene "${scene}"?\nThis will change ${actions.length} device(s). Click OK to apply.`);
+  if(confirmed){
+    actions.forEach(a=>{
+      const devObj = state.rooms[a.room] && state.rooms[a.room].devices[a.device];
+      if(!devObj) return;
+      if(a.hasOwnProperty('on')) devObj.on = a.on;
+      if(a.hasOwnProperty('temp')) devObj.temp = a.temp;
+    });
+    state.activeScene = scene; saveState(); renderAll();
+    showToast(`Scene "${scene}" applied.`);
+  }
+}
+
+/* Schedule modal */
+const scheduleBtn = document.getElementById('scheduleBtn');
+const closeSched = document.getElementById('closeSched'); const saveSched=document.getElementById('saveSched');
+scheduleBtn.addEventListener('click', ()=>{ modal.style.display='flex'; populateSchedDevices(); renderSchedList(); });
+closeSched.addEventListener('click', ()=>{ modal.style.display='none'; });
+saveSched.addEventListener('click', ()=>{
+  const devPath = schedDevice.value; const time = schedTime.value; const repeat = schedRepeat.value;
+  if(!devPath || !time){ alert('Select a device and time'); return; }
+  const id = Date.now().toString();
+  state.schedules.push({id, devicePath: devPath, time, repeat});
+  saveState(); renderSchedList(); showToast('Schedule saved');
+});
+
+function populateSchedDevices(){
+  schedDevice.innerHTML='';
+  Object.keys(state.rooms).forEach(r=>{
+    Object.keys(state.rooms[r].devices).forEach(d=>{
+      const opt = document.createElement('option'); opt.value = `${r}||${d}`; opt.textContent = `${r} — ${d}`; schedDevice.appendChild(opt);
+    });
+  });
+}
+function renderSchedList(){
+  schedList.innerHTML='';
+  if(state.schedules.length===0){ schedList.textContent='No schedules yet'; return; }
+  state.schedules.forEach(s=>{
+    const div = document.createElement('div'); div.className='schedule-item';
+    const left = document.createElement('div'); left.textContent = `${s.devicePath.replace('||',' — ')} • ${s.time} • ${s.repeat}`;
+    const right = document.createElement('div');
+    const del = document.createElement('button'); del.className='btn ghost'; del.textContent='Delete';
+    del.onclick = ()=>{ state.schedules = state.schedules.filter(x=>x.id!==s.id); saveState(); renderSchedList(); showToast('Schedule deleted'); };
+    right.appendChild(del); div.appendChild(left); div.appendChild(right); schedList.appendChild(div);
+  });
+}
+
+/* All off button */
+document.getElementById('allOffBtn').addEventListener('click', ()=>{
+  // compute affected devices excluding 'essential' like 'Fridge' (none in prototype)
+  const affected = [];
+  Object.keys(state.rooms).forEach(r=>{
+    Object.keys(state.rooms[r].devices).forEach(d=>{
+      const dev = state.rooms[r].devices[d];
+      if(dev.type==='light' || dev.type==='appliance') affected.push({room:r,device:d});
+    });
+  });
+  const confirmMsg = `Turn off ${affected.length} devices? This will turn off: \n` + affected.slice(0,10).map(a=>`${a.room} — ${a.device}`).join('\n');
+  if(confirm(confirmMsg)){
+    affected.forEach(a=>{ state.rooms[a.room].devices[a.device].on=false; });
+    saveState(); renderAll();
+    showToast('All non-essential devices turned off');
+  }
+});
+
+/* render everything */
+function renderAll(){
+  renderRooms(); renderDevices(); renderSchedList();
+  // update header active scene highlight
+  document.querySelectorAll('.scene').forEach(b=> b.classList.toggle('active', b.dataset.scene===state.activeScene));
+  // populate schedule devices dropdown
+  populateSchedDevices();
+}
+renderAll();
+
+/* simple scheduler runner (poll) */
+setInterval(()=>{
+  const now = new Date();
+  const hh = now.toTimeString().slice(0,5);
+  state.schedules.forEach(s=>{
+    if(s.time===hh){
+      // apply schedule
+      const [room,dev] = s.devicePath.split('||');
+      const obj = state.rooms[room] && state.rooms[room].devices[dev];
+      if(obj){ // toggle on for appliances; for simplicity set to on
+        if(obj.type==='appliance' || obj.type==='light'){ obj.on = true; showToast(`Schedule: ${dev} turned on`); }
+      }
+    }
+  });
+}, 30000);
+
+</script>
+</body>
+</html>
